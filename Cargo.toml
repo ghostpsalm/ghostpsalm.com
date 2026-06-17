@@ -1,0 +1,56 @@
+[package]
+name = "ghostpsalm"
+version = "0.1.0"
+edition = "2024"
+description = "Private personal MCP assistant backend — tasks, health logs, knowledge capture, automation"
+
+[[bin]]
+name = "ghostpsalm"
+path = "src/main.rs"
+
+[dependencies]
+# Web framework
+axum = { version = "0.8", features = ["macros", "multipart"] }
+axum-extra = { version = "0.10", features = ["typed-header"] }
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Config and env
+config = "0.15"
+dotenvy = "0.15"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUIDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Git operations (shell-out wrapper for now; replace with libgit2 bindings later)
+# git2 = "0.19"
+
+# Auth / crypto
+jsonwebtoken = "9"
+argon2 = "0.5"
+rand = "0.8"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+[dev-dependencies]
+axum-test = "20"
+tokio-test = "0.4"
