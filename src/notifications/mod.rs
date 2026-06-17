@@ -32,6 +32,11 @@ pub async fn start_scheduler(state: AppState) -> Result<JobScheduler> {
     add_job(&sched, &state.cfg.lunch_review_cron.clone(), tz, state.clone(), Arc::new(lunchtime_review)).await?;
     add_job(&sched, &state.cfg.evening_errands_cron.clone(), tz, state.clone(), Arc::new(evening_errands)).await?;
 
+    if state.cfg.vault_sync_enabled {
+        tracing::info!(cron = %state.cfg.vault_sync_cron, "vault auto-sync scheduled");
+        add_job(&sched, &state.cfg.vault_sync_cron.clone(), tz, state.clone(), Arc::new(vault_auto_sync)).await?;
+    }
+
     sched.start().await?;
     Ok(sched)
 }
@@ -255,6 +260,28 @@ async fn log_to_db(
     .bind(error)
     .execute(&state.db)
     .await?;
+    Ok(())
+}
+
+pub async fn vault_auto_sync(state: AppState) -> Result<()> {
+    let msg = format!(
+        "assistant: auto-sync {}",
+        chrono::Local::now().format("%Y-%m-%d %H:%M")
+    );
+    let result = crate::git::sync_vault(&state.cfg.vault_path, &msg).await?;
+    tracing::info!(
+        committed = result.committed,
+        files = result.files_changed,
+        pushed = result.pushed,
+        conflicts = result.conflicts,
+        "vault auto-sync complete"
+    );
+    if result.conflicts {
+        tracing::warn!(
+            files = ?result.conflict_files,
+            "vault sync conflict — manual resolution needed"
+        );
+    }
     Ok(())
 }
 

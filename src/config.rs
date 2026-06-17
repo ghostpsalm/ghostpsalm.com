@@ -26,6 +26,12 @@ pub struct Config {
     pub evening_errands_cron: String,
     /// Cron expression (local time) for morning brief. Default: 08:00 daily.
     pub morning_brief_cron: String,
+
+    // Vault auto-sync
+    /// Automatically commit and push vault changes on a schedule.
+    pub vault_sync_enabled: bool,
+    /// Cron expression (local time) for vault auto-sync. Default: every 4 hours.
+    pub vault_sync_cron: String,
 }
 
 impl Config {
@@ -43,6 +49,8 @@ impl Config {
             .set_default("lunch_review_cron", "0 30 12 * * *")?
             .set_default("evening_errands_cron", "0 30 17 * * *")?
             .set_default("morning_brief_cron", "0 0 8 * * *")?
+            .set_default("vault_sync_enabled", true)?
+            .set_default("vault_sync_cron", "0 0 */4 * * *")?
             .build()?
             .try_deserialize()?;
         Ok(cfg)
