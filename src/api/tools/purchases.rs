@@ -1,10 +1,9 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde::Deserialize;
-use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::config::Config;
 use crate::db::models::Purchase;
+use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct RecordPurchaseRequest {
@@ -17,7 +16,7 @@ pub struct RecordPurchaseRequest {
 }
 
 pub async fn record(
-    State((db, _cfg)): State<(PgPool, Config)>,
+    State(state): State<AppState>,
     Json(req): Json<RecordPurchaseRequest>,
 ) -> Result<Json<Purchase>, StatusCode> {
     let purchase = sqlx::query_as::<_, Purchase>(
@@ -32,7 +31,7 @@ pub async fn record(
     .bind(req.price_cents)
     .bind(&req.link)
     .bind(&req.project)
-    .fetch_one(&db)
+    .fetch_one(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

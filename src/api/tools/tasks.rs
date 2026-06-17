@@ -1,11 +1,10 @@
 use axum::{extract::State, http::StatusCode, Json};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::config::Config;
 use crate::db::models::Task;
+use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct AddTaskRequest {
@@ -41,7 +40,7 @@ pub struct TaskResponse {
 }
 
 pub async fn add(
-    State((db, _cfg)): State<(PgPool, Config)>,
+    State(state): State<AppState>,
     Json(req): Json<AddTaskRequest>,
 ) -> Result<Json<TaskResponse>, StatusCode> {
     let task = sqlx::query_as::<_, Task>(
@@ -57,7 +56,7 @@ pub async fn add(
     .bind(&req.person)
     .bind(&req.location)
     .bind(req.source.as_deref().unwrap_or("assistant"))
-    .fetch_one(&db)
+    .fetch_one(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -65,14 +64,14 @@ pub async fn add(
 }
 
 pub async fn complete(
-    State((db, _cfg)): State<(PgPool, Config)>,
+    State(state): State<AppState>,
     Json(req): Json<CompleteTaskRequest>,
 ) -> Result<Json<TaskResponse>, StatusCode> {
     let task = sqlx::query_as::<_, Task>(
         "UPDATE tasks SET status='done', completed_at=NOW() WHERE id=$1 RETURNING *",
     )
     .bind(req.id)
-    .fetch_one(&db)
+    .fetch_one(&state.db)
     .await
     .map_err(|_| StatusCode::NOT_FOUND)?;
 
@@ -80,7 +79,7 @@ pub async fn complete(
 }
 
 pub async fn update(
-    State((db, _cfg)): State<(PgPool, Config)>,
+    State(state): State<AppState>,
     Json(req): Json<UpdateTaskRequest>,
 ) -> Result<Json<TaskResponse>, StatusCode> {
     let task = sqlx::query_as::<_, Task>(
@@ -100,7 +99,7 @@ pub async fn update(
     .bind(&req.project)
     .bind(&req.person)
     .bind(&req.status)
-    .fetch_one(&db)
+    .fetch_one(&state.db)
     .await
     .map_err(|_| StatusCode::NOT_FOUND)?;
 

@@ -1,15 +1,13 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 
-use crate::config::Config;
+use crate::state::AppState;
 use crate::vault;
 
 #[derive(Debug, Deserialize)]
 pub struct SaveKnowledgeRequest {
     pub title: String,
     pub content: String,
-    /// Relative path within vault, e.g. "projects/dragoon" or "decisions"
     pub vault_path: Option<String>,
 }
 
@@ -19,11 +17,11 @@ pub struct SaveKnowledgeResponse {
 }
 
 pub async fn save(
-    State((_db, cfg)): State<(PgPool, Config)>,
+    State(state): State<AppState>,
     Json(req): Json<SaveKnowledgeRequest>,
 ) -> Result<Json<SaveKnowledgeResponse>, StatusCode> {
     let path = vault::knowledge::save_note(
-        &cfg.vault_path,
+        &state.cfg.vault_path,
         req.vault_path.as_deref().unwrap_or("notes"),
         &req.title,
         &req.content,

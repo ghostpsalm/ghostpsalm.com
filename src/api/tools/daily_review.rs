@@ -1,9 +1,8 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde::Serialize;
-use sqlx::PgPool;
 
-use crate::config::Config;
 use crate::db::models::Task;
+use crate::state::AppState;
 
 #[derive(Debug, Serialize)]
 pub struct DailyReview {
@@ -15,13 +14,11 @@ pub struct DailyReview {
     pub other: Vec<Task>,
 }
 
-pub async fn handler(
-    State((db, _cfg)): State<(PgPool, Config)>,
-) -> Result<Json<DailyReview>, StatusCode> {
+pub async fn handler(State(state): State<AppState>) -> Result<Json<DailyReview>, StatusCode> {
     let open_tasks = sqlx::query_as::<_, Task>(
         "SELECT * FROM tasks WHERE status='open' ORDER BY priority ASC NULLS LAST, due_date ASC NULLS LAST",
     )
-    .fetch_all(&db)
+    .fetch_all(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

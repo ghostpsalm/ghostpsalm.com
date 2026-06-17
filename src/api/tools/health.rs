@@ -1,10 +1,9 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde::Deserialize;
-use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::config::Config;
 use crate::db::models::HealthEntry;
+use crate::state::AppState;
 use crate::vault;
 
 #[derive(Debug, Deserialize)]
@@ -18,7 +17,7 @@ pub struct LogHealthRequest {
 }
 
 pub async fn log_entry(
-    State((db, cfg)): State<(PgPool, Config)>,
+    State(state): State<AppState>,
     Json(req): Json<LogHealthRequest>,
 ) -> Result<Json<HealthEntry>, StatusCode> {
     let date = req.date.unwrap_or_else(|| chrono::Local::now().date_naive());
@@ -35,11 +34,11 @@ pub async fn log_entry(
     .bind(req.sleep_hours)
     .bind(&req.symptoms)
     .bind(&req.notes)
-    .fetch_one(&db)
+    .fetch_one(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    vault::journal::append_health(&cfg.vault_path, &entry)
+    vault::journal::append_health(&state.cfg.vault_path, &entry)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

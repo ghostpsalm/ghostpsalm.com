@@ -2,3 +2,4 @@
 .env
 *.local
 **/*.rs.bk
+/keys/private.pem
