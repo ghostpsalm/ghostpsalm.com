@@ -31,6 +31,7 @@ dotenvy = "0.15"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = { version = "0.10", features = ["serde"] }
 
 # UUIDs
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -42,6 +43,10 @@ uuid = { version = "1", features = ["v4", "serde"] }
 jsonwebtoken = "9"
 argon2 = "0.5"
 rand = "0.8"
+
+# Notifications / scheduling
+tokio-cron-scheduler = "0.15"
+reqwest = { version = "0.13", default-features = false, features = ["json", "form", "rustls", "webpki-roots"] }
 
 # Logging / tracing
 tracing = "0.1"

@@ -2,6 +2,7 @@ mod api;
 mod config;
 mod db;
 mod git;
+mod notifications;
 mod state;
 mod vault;
 
@@ -30,11 +31,16 @@ async fn main() -> Result<()> {
         .with_context(|| format!("reading public key: {}", cfg.public_key_path))?;
 
     let encoding_key = EncodingKey::from_ed_pem(&private_pem)
-        .context("parsing Ed25519 private key — ensure it is PKCS8 PEM format")?;
+        .context("parsing Ed25519 private key — ensure PKCS8 PEM format")?;
     let decoding_key = DecodingKey::from_ed_pem(&public_pem)
-        .context("parsing Ed25519 public key — ensure it is SPKI PEM format")?;
+        .context("parsing Ed25519 public key — ensure SPKI PEM format")?;
 
     let state = AppState::new(db_pool, cfg.clone(), encoding_key, decoding_key);
+
+    // Start notification scheduler in the background.
+    let _scheduler = notifications::start_scheduler(state.clone())
+        .await
+        .context("starting notification scheduler")?;
 
     let app = api::router(state);
     let listener = tokio::net::TcpListener::bind(&cfg.bind_addr).await?;
