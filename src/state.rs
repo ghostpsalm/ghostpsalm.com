@@ -1,5 +1,7 @@
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
+use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use sqlx::PgPool;
 
@@ -12,6 +14,8 @@ pub struct AppState {
     pub encoding_key: Arc<EncodingKey>,
     pub decoding_key: Arc<DecodingKey>,
     pub http: Arc<reqwest::Client>,
+    /// Global rate limiter for /auth/token — shared across all callers.
+    pub auth_limiter: Arc<DefaultDirectRateLimiter>,
 }
 
 impl AppState {
@@ -27,12 +31,17 @@ impl AppState {
             .build()
             .expect("failed to build HTTP client");
 
+        let rpm = NonZeroU32::new(cfg.auth_rate_limit_rpm.max(1))
+            .unwrap_or(NonZeroU32::new(10).unwrap());
+        let auth_limiter = Arc::new(RateLimiter::direct(Quota::per_minute(rpm)));
+
         Self {
             db,
             cfg,
             encoding_key: Arc::new(encoding_key),
             decoding_key: Arc::new(decoding_key),
             http: Arc::new(http),
+            auth_limiter,
         }
     }
 }

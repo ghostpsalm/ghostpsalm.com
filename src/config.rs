@@ -13,24 +13,24 @@ pub struct Config {
     pub jwt_issuer: String,
     pub jwt_audience: String,
 
+    // TLS — if both are set the service runs HTTPS; otherwise HTTP.
+    pub tls_cert_path: Option<String>,
+    pub tls_key_path: Option<String>,
+
+    // Auth rate limiting — global requests-per-minute cap on /auth/token.
+    pub auth_rate_limit_rpm: u32,
+
     // Notifications
-    /// Set false to disable all outbound notifications without removing keys.
     pub pushover_enabled: bool,
     pub pushover_token: Option<String>,
     pub pushover_user: Option<String>,
-    /// IANA timezone name, e.g. "Australia/Perth". All cron times are in this zone.
     pub scheduler_tz: String,
-    /// Cron expression (local time) for lunchtime review. Default: 12:30 daily.
     pub lunch_review_cron: String,
-    /// Cron expression (local time) for evening errand reminder. Default: 17:30 daily.
     pub evening_errands_cron: String,
-    /// Cron expression (local time) for morning brief. Default: 08:00 daily.
     pub morning_brief_cron: String,
 
     // Vault auto-sync
-    /// Automatically commit and push vault changes on a schedule.
     pub vault_sync_enabled: bool,
-    /// Cron expression (local time) for vault auto-sync. Default: every 4 hours.
     pub vault_sync_cron: String,
 }
 
@@ -44,6 +44,7 @@ impl Config {
             .set_default("token_ttl_secs", 3600u64)?
             .set_default("jwt_issuer", "ghostpsalm")?
             .set_default("jwt_audience", "ghostpsalm-api")?
+            .set_default("auth_rate_limit_rpm", 10u32)?
             .set_default("pushover_enabled", false)?
             .set_default("scheduler_tz", "UTC")?
             .set_default("lunch_review_cron", "0 30 12 * * *")?
@@ -60,5 +61,9 @@ impl Config {
         self.pushover_enabled
             && self.pushover_token.is_some()
             && self.pushover_user.is_some()
+    }
+
+    pub fn tls_enabled(&self) -> bool {
+        self.tls_cert_path.is_some() && self.tls_key_path.is_some()
     }
 }

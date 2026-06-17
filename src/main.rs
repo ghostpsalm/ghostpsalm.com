@@ -37,15 +37,29 @@ async fn main() -> Result<()> {
 
     let state = AppState::new(db_pool, cfg.clone(), encoding_key, decoding_key);
 
-    // Start notification scheduler in the background.
     let _scheduler = notifications::start_scheduler(state.clone())
         .await
         .context("starting notification scheduler")?;
 
     let app = api::router(state);
-    let listener = tokio::net::TcpListener::bind(&cfg.bind_addr).await?;
-    tracing::info!("listening on {}", cfg.bind_addr);
-    axum::serve(listener, app).await?;
+
+    if cfg.tls_enabled() {
+        let cert = cfg.tls_cert_path.as_deref().unwrap();
+        let key = cfg.tls_key_path.as_deref().unwrap();
+        let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(cert, key)
+            .await
+            .context("loading TLS certificate")?;
+        let addr: std::net::SocketAddr = cfg.bind_addr.parse()
+            .context("parsing BIND_ADDR")?;
+        tracing::info!(addr = %cfg.bind_addr, "HTTPS listening");
+        axum_server::bind_rustls(addr, tls_config)
+            .serve(app.into_make_service())
+            .await?;
+    } else {
+        let listener = tokio::net::TcpListener::bind(&cfg.bind_addr).await?;
+        tracing::info!(addr = %cfg.bind_addr, tls = false, "HTTP listening");
+        axum::serve(listener, app).await?;
+    }
 
     Ok(())
 }
