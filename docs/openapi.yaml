@@ -1,0 +1,906 @@
+openapi: "3.1.0"
+info:
+  title: Ghostpsalm Personal Assistant API
+  version: "0.1.0"
+  description: >
+    Personal life-management tools: tasks, health logs, journal, knowledge notes,
+    purchases, contacts, and vault sync. All tool endpoints require a Bearer JWT
+    obtained from POST /auth/token.
+
+servers:
+  - url: https://YOUR_PUBLIC_HOSTNAME
+    description: Public endpoint (replace with your Cloudflare / domain URL)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: EdDSA/Ed25519 JWT. Obtain via POST /auth/token.
+
+  schemas:
+    Task:
+      type: object
+      required: [id, title, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+          enum: [open, done, deferred]
+        priority:
+          type: [integer, "null"]
+          description: "1 = high, 2 = normal, 3 = low"
+          minimum: 1
+          maximum: 3
+        due_date:
+          type: [string, "null"]
+          format: date-time
+        project:
+          type: [string, "null"]
+        person:
+          type: [string, "null"]
+        location:
+          type: [string, "null"]
+        source:
+          type: [string, "null"]
+          enum: [voice, text, assistant, null]
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: [string, "null"]
+          format: date-time
+
+    HealthEntry:
+      type: object
+      required: [id, date, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        fatigue_rating:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 10
+          description: 1 = no fatigue, 10 = severe
+        glucose_readings:
+          description: Array of mmol/L readings taken through the day
+          oneOf:
+            - type: array
+              items:
+                type: number
+            - type: "null"
+        sleep_hours:
+          type: [number, "null"]
+        symptoms:
+          type: [string, "null"]
+        notes:
+          type: [string, "null"]
+        created_at:
+          type: string
+          format: date-time
+
+    Purchase:
+      type: object
+      required: [id, item, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        item:
+          type: string
+        vendor:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [want, ordered, paid, collected]
+        price_cents:
+          type: [integer, "null"]
+          description: Price in cents (e.g. 1200 = $12.00)
+        link:
+          type: [string, "null"]
+        project:
+          type: [string, "null"]
+        ordered_at:
+          type: [string, "null"]
+          format: date-time
+        paid_at:
+          type: [string, "null"]
+          format: date-time
+        delivered_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    AuditEvent:
+      type: object
+      required: [id, tool, payload, files_touched, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: [string, "null"]
+          description: JWT jti of the token used for this call
+        tool:
+          type: string
+          example: "POST /api/tools/add_task"
+        payload:
+          type: object
+          description: "{ status: HTTP status, scope: token scope }"
+        files_touched:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+
+    NotificationLogEntry:
+      type: object
+      required: [id, kind, channel, payload, status, sent_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [morning_brief, lunchtime_review, evening_errands, test]
+        channel:
+          type: string
+          example: pushover
+        payload:
+          type: object
+          description: The notification title and message that was sent
+        status:
+          type: string
+          enum: [sent, failed, skipped]
+        error:
+          type: [string, "null"]
+        sent_at:
+          type: string
+          format: date-time
+
+    DailyReview:
+      type: object
+      required: [errands, calls_messages, house, projects, health, other]
+      properties:
+        errands:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        calls_messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+          description: Tasks with a person field set
+        house:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        health:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        other:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+
+    SyncResult:
+      type: object
+      required: [committed, pulled, pushed, conflicts, conflict_files, message]
+      properties:
+        committed:
+          type: boolean
+        commit_hash:
+          type: [string, "null"]
+        files_changed:
+          type: integer
+        pulled:
+          type: boolean
+        pushed:
+          type: boolean
+        conflicts:
+          type: boolean
+        conflict_files:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+
+    TokenResponse:
+      type: object
+      required: [token, expires_at, scope]
+      properties:
+        token:
+          type: string
+          description: Signed EdDSA JWT
+        expires_at:
+          type: string
+          format: date-time
+        scope:
+          type: string
+          enum: [read, write]
+
+    MeResponse:
+      type: object
+      required: [sub, scope, jti, expires_at, revoked]
+      properties:
+        sub:
+          type: string
+        scope:
+          type: string
+          enum: [read, write]
+        jti:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+        revoked:
+          type: boolean
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Service liveness probe
+      description: Returns 200 OK if the service is up. No auth required.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  # ── Authentication ──────────────────────────────────────────────────────────
+
+  /auth/token:
+    post:
+      operationId: issueToken
+      summary: Issue a JWT
+      description: >
+        Exchange a passphrase for a short-lived EdDSA JWT. Rate-limited to
+        AUTH_RATE_LIMIT_RPM (default 10/min) globally. No auth required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [passphrase]
+              properties:
+                passphrase:
+                  type: string
+                  description: The configured GHOSTPSALM_PASSPHRASE
+                scope:
+                  type: string
+                  enum: [read, write]
+                  default: write
+                  description: read tokens are rejected on any mutating endpoint
+      responses:
+        "200":
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          description: Invalid scope value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Wrong passphrase
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/me:
+    get:
+      operationId: me
+      summary: Inspect current token claims
+      description: Returns sub, scope, jti, expiry, and revocation status for the presented token.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Token claims
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          description: Missing or invalid token
+
+  /auth/revoke:
+    post:
+      operationId: revokeToken
+      summary: Revoke current token
+      description: Blacklists the token's jti. Subsequent requests with the same token return 401.
+      security:
+        - BearerAuth: []
+      responses:
+        "204":
+          description: Token revoked
+        "401":
+          description: Missing or invalid token
+
+  # ── Tool manifest ────────────────────────────────────────────────────────────
+
+  /api/tools:
+    get:
+      operationId: describeTools
+      summary: Tool manifest
+      description: >
+        Returns the full list of available tools and a SHA-256 hash of the manifest.
+        Clients can cache the tool list and re-fetch only when the hash changes.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Tool manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, manifest_hash, tools]
+                properties:
+                  version:
+                    type: string
+                    example: "0.1.0"
+                  manifest_hash:
+                    type: string
+                    example: "sha256:a392f30a..."
+                  tools:
+                    type: array
+                    items:
+                      type: object
+
+  # ── Tasks ────────────────────────────────────────────────────────────────────
+
+  /api/tools/daily_review:
+    get:
+      operationId: getDailyReview
+      summary: Open tasks grouped by context
+      description: >
+        Returns all open tasks bucketed into: errands, calls_messages, house,
+        projects, health, other. Sorted by priority then due date within each bucket.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Bucketed open tasks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyReview"
+        "401":
+          description: Missing or invalid token
+
+  /api/tools/add_task:
+    post:
+      operationId: addTask
+      summary: Create a task
+      description: >
+        Creates a new open task. Only title is required. Use location='errand' or
+        location='shop' to route to the errands bucket; use project='health' for
+        the health bucket. Assigning a person routes to calls_messages.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title:
+                  type: string
+                  example: Pick up trailer from Rob
+                priority:
+                  type: integer
+                  enum: [1, 2, 3]
+                  description: "1 = high, 2 = normal, 3 = low"
+                due_date:
+                  type: string
+                  format: date-time
+                  example: "2026-06-20T09:00:00Z"
+                project:
+                  type: string
+                  example: shed
+                person:
+                  type: string
+                  example: Rob
+                location:
+                  type: string
+                  example: errand
+                source:
+                  type: string
+                  enum: [voice, text, assistant]
+                  default: assistant
+      responses:
+        "200":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [task]
+                properties:
+                  task:
+                    $ref: "#/components/schemas/Task"
+        "401":
+          description: Missing or invalid token
+
+  /api/tools/complete_task:
+    post:
+      operationId: completeTask
+      summary: Mark a task done
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                note:
+                  type: string
+                  description: Optional completion note (stored as a journal entry)
+      responses:
+        "200":
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [task]
+                properties:
+                  task:
+                    $ref: "#/components/schemas/Task"
+        "401":
+          description: Missing or invalid token
+        "404":
+          description: Task not found
+
+  /api/tools/update_task:
+    post:
+      operationId: updateTask
+      summary: Update any field on a task
+      description: >
+        All fields except id are optional. Omitted fields are unchanged
+        (COALESCE semantics). Use status='deferred' to snooze a task.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                title:
+                  type: string
+                priority:
+                  type: integer
+                  enum: [1, 2, 3]
+                due_date:
+                  type: [string, "null"]
+                  format: date-time
+                project:
+                  type: [string, "null"]
+                person:
+                  type: [string, "null"]
+                status:
+                  type: string
+                  enum: [open, done, deferred]
+      responses:
+        "200":
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [task]
+                properties:
+                  task:
+                    $ref: "#/components/schemas/Task"
+        "401":
+          description: Missing or invalid token
+        "404":
+          description: Task not found
+
+  # ── Contacts ─────────────────────────────────────────────────────────────────
+
+  /api/tools/contacts_to_message:
+    get:
+      operationId: contactsToMessage
+      summary: People you need to contact
+      description: Returns all open tasks that have a person field set.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Open tasks with a person assigned
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+        "401":
+          description: Missing or invalid token
+
+  # ── Health logging ────────────────────────────────────────────────────────────
+
+  /api/tools/log_health:
+    post:
+      operationId: logHealth
+      summary: Append a health entry
+      description: >
+        Records a structured health log entry in Postgres and appends a summary
+        to the daily Markdown journal. All fields are optional; date defaults to today.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                date:
+                  type: string
+                  format: date
+                  description: Defaults to today
+                fatigue_rating:
+                  type: integer
+                  minimum: 1
+                  maximum: 10
+                  description: 1 = none, 10 = severe
+                glucose_readings:
+                  type: array
+                  items:
+                    type: number
+                  description: mmol/L readings in chronological order
+                sleep_hours:
+                  type: number
+                  example: 7.5
+                symptoms:
+                  type: string
+                  example: mild headache, afternoon fatigue
+                notes:
+                  type: string
+                  example: Took medication at 8am. Energy improved after lunch.
+      responses:
+        "200":
+          description: Health entry created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthEntry"
+        "401":
+          description: Missing or invalid token
+
+  # ── Journal ───────────────────────────────────────────────────────────────────
+
+  /api/tools/append_journal:
+    post:
+      operationId: appendJournal
+      summary: Append a note to the daily journal
+      description: >
+        Appends a plain-text note under a HH:MM heading in the daily Markdown
+        journal file. Creates the file if it doesn't exist.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note:
+                  type: string
+                  example: Finished bookbinding spine gluing. Let dry overnight.
+                date:
+                  type: string
+                  format: date
+                  description: Defaults to today
+      responses:
+        "200":
+          description: Note appended
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [path]
+                properties:
+                  path:
+                    type: string
+                    example: "./vault/journal/2026/2026-06-19.md"
+        "401":
+          description: Missing or invalid token
+
+  # ── Knowledge ─────────────────────────────────────────────────────────────────
+
+  /api/tools/save_knowledge:
+    post:
+      operationId: saveKnowledge
+      summary: Write a knowledge note into the vault
+      description: >
+        Creates a titled Markdown file under vault_path with YAML frontmatter.
+        Use vault_path to organise notes into project subfolders.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, content]
+              properties:
+                title:
+                  type: string
+                  example: Dragoon monorepo migration plan
+                content:
+                  type: string
+                  description: Full Markdown body of the note
+                vault_path:
+                  type: string
+                  default: notes
+                  example: projects/dragoon
+                  description: Path relative to vault root where the file is created
+      responses:
+        "200":
+          description: Note saved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [path]
+                properties:
+                  path:
+                    type: string
+                    example: "./vault/projects/dragoon/dragoon-monorepo-migration-plan.md"
+        "401":
+          description: Missing or invalid token
+
+  # ── Purchases ─────────────────────────────────────────────────────────────────
+
+  /api/tools/record_purchase:
+    post:
+      operationId: recordPurchase
+      summary: Track a purchase
+      description: >
+        Records an item to buy, on order, or already collected.
+        Status flows: want → ordered → paid → collected.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [item]
+              properties:
+                item:
+                  type: string
+                  example: Bookbinding bone folder
+                vendor:
+                  type: string
+                  example: "Eckersley's"
+                status:
+                  type: string
+                  enum: [want, ordered, paid, collected]
+                  default: want
+                price_cents:
+                  type: integer
+                  description: Price in cents (e.g. 1200 = $12.00)
+                  example: 1200
+                link:
+                  type: [string, "null"]
+                project:
+                  type: string
+                  example: bookbinding
+      responses:
+        "200":
+          description: Purchase recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Purchase"
+        "401":
+          description: Missing or invalid token
+
+  # ── Git sync ──────────────────────────────────────────────────────────────────
+
+  /api/tools/sync_git:
+    post:
+      operationId: syncGit
+      summary: Commit vault changes, pull, and push
+      description: >
+        Stages vault changes, commits (if any), pulls with rebase and autostash,
+        then pushes. If a rebase conflict occurs, the rebase is aborted safely
+        and conflicts are reported — no data is lost.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                  description: Commit message. Defaults to "assistant: sync YYYY-MM-DD HH:MM"
+                  example: "assistant: afternoon sync 2026-06-19"
+      responses:
+        "200":
+          description: Sync result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncResult"
+        "401":
+          description: Missing or invalid token
+        "500":
+          description: Git error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── Audit ─────────────────────────────────────────────────────────────────────
+
+  /api/tools/audit_recent:
+    get:
+      operationId: auditRecent
+      summary: Last 50 tool call records
+      description: Every protected tool call is logged with session jti and HTTP status.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Recent audit events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditEvent"
+        "401":
+          description: Missing or invalid token
+
+  # ── Notifications ─────────────────────────────────────────────────────────────
+
+  /api/tools/notification_log:
+    get:
+      operationId: notificationLog
+      summary: Last 100 notification attempts
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Notification history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotificationLogEntry"
+        "401":
+          description: Missing or invalid token
+
+  /api/tools/notification_schedules:
+    get:
+      operationId: notificationSchedules
+      summary: Current scheduler configuration
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Schedule config
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [scheduler_tz, morning_brief_cron, lunch_review_cron, evening_errands_cron, pushover_enabled]
+                properties:
+                  scheduler_tz:
+                    type: string
+                    example: Australia/Perth
+                  morning_brief_cron:
+                    type: string
+                    example: "0 0 8 * * *"
+                  lunch_review_cron:
+                    type: string
+                    example: "0 30 12 * * *"
+                  evening_errands_cron:
+                    type: string
+                    example: "0 30 17 * * *"
+                  pushover_enabled:
+                    type: boolean
+        "401":
+          description: Missing or invalid token
+
+  /api/tools/notify_test:
+    post:
+      operationId: notifyTest
+      summary: Send a test Pushover notification
+      description: Fires a test notification immediately to confirm Pushover credentials are working.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Test sent
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, pushover_enabled]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  pushover_enabled:
+                    type: boolean
+        "401":
+          description: Missing or invalid token
+        "502":
+          description: Pushover delivery failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
