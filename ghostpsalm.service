@@ -1,0 +1,21 @@
+[Unit]
+Description=Ghostpsalm (Elroi) Personal Assistant API
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=kogies
+WorkingDirectory=/home/kogies/ghostpsalm.com
+EnvironmentFile=/home/kogies/ghostpsalm.com/.env
+ExecStart=/home/kogies/ghostpsalm.com/target/release/ghostpsalm
+Restart=on-failure
+RestartSec=5s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ghostpsalm
+
+[Install]
+WantedBy=multi-user.target
